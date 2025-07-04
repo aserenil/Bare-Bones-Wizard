@@ -1,0 +1,17 @@
+[project]
+name = "bare-bones-wizard"
+version = "0.1.0"
+description = "Qt design patterns testing"
+requires-python = ">=3.13"
+dependencies = [
+    "pyside6>=6.9.1",
+]
+
+[dependency-groups]
+dev = [
+    "black",
+    "isort>=6.0.1",
+    "pytest",
+    "pytest-mock",
+    "ruff",
+]
