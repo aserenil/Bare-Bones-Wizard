@@ -1,81 +1,92 @@
 # animated_stacked_widget.py
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPoint,
+    QPropertyAnimation,
+    Slot,
+)
 from PySide6.QtWidgets import QStackedWidget
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QPoint, QParallelAnimationGroup, Slot
 
 
 class AnimatedStackedWidget(QStackedWidget):
     """
     A QStackedWidget that provides a sliding animation when changing pages.
+    The animation logic is based on the user-provided file.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.animation_duration = 300  # milliseconds
-        self.is_animating = False
+        self.animation_group = QParallelAnimationGroup(self)
+        # Connect the finished signal to hide the old page.
+        self.animation_group.finished.connect(self._on_animation_finished)
+        self._previous_widget = None
 
     @Slot(int)
     def goto_page(self, next_index):
         """Animates the transition to the specified page index."""
-        if self.is_animating or next_index == self.currentIndex():
+        current_index = self.currentIndex()
+        if next_index == current_index:
             return
 
-        self.is_animating = True
-        current_index = self.currentIndex()
+        # This logic is from your provided file: if an animation is already
+        # running, stop it immediately.
+        if self.animation_group.state() == QAbstractAnimation.State.Running:
+            self.animation_group.stop()
+
         current_widget = self.widget(current_index)
         next_widget = self.widget(next_index)
 
         if not current_widget or not next_widget:
-            self.is_animating = False
+            self.setCurrentIndex(next_index)
             return
 
         width = self.width()
         # Determine animation direction
         if next_index > current_index:
             # Slide to the left (forward)
-            start_pos_current = QPoint(0, 0)
-            end_pos_current = QPoint(-width, 0)
-            start_pos_next = QPoint(width, 0)
+            offset = width
         else:
             # Slide to the right (backward)
-            start_pos_current = QPoint(0, 0)
-            end_pos_current = QPoint(width, 0)
-            start_pos_next = QPoint(-width, 0)
+            offset = -width
 
-        end_pos_next = QPoint(0, 0)
-
-        # Ensure the next widget is visible and positioned off-screen before animation starts
+        # Position the next widget off-screen to slide in
         next_widget.setGeometry(0, 0, width, self.height())
-        next_widget.move(start_pos_next)
-        next_widget.show()
-        next_widget.raise_()
+        next_widget.move(offset, 0)
+
+        # This is a key part of the logic from your file:
+        # Set the index immediately. This makes the new widget the "current" one
+        # and emits the `currentChanged` signal that main.py uses.
+        self.setCurrentIndex(next_index)
 
         # Create animations for both widgets
         anim_current = QPropertyAnimation(current_widget, b"pos")
         anim_current.setDuration(self.animation_duration)
         anim_current.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        anim_current.setStartValue(start_pos_current)
-        anim_current.setEndValue(end_pos_current)
+        anim_current.setStartValue(QPoint(0, 0))
+        anim_current.setEndValue(QPoint(-offset, 0))
 
         anim_next = QPropertyAnimation(next_widget, b"pos")
         anim_next.setDuration(self.animation_duration)
         anim_next.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        anim_next.setStartValue(start_pos_next)
-        anim_next.setEndValue(end_pos_next)
+        anim_next.setStartValue(QPoint(offset, 0))
+        anim_next.setEndValue(QPoint(0, 0))
 
         # Group the animations to run in parallel
-        self.animation_group = QParallelAnimationGroup()
+        self.animation_group.clear()  # Clear any previous animations
         self.animation_group.addAnimation(anim_current)
         self.animation_group.addAnimation(anim_next)
 
-        # Connect the finished signal to a cleanup slot
-        self.animation_group.finished.connect(lambda: self._on_animation_finished(next_index))
+        # Keep track of the widget we need to hide after the animation
+        self._previous_widget = current_widget
 
         self.animation_group.start()
 
-    def _on_animation_finished(self, next_index):
-        """Called after the animation completes to finalize the state."""
-        # This is the crucial step: officially set the current index.
-        # This will also emit the `currentChanged` signal that our main window uses.
-        self.setCurrentIndex(next_index)
-        self.is_animating = False
-
+    def _on_animation_finished(self):
+        """Called after the animation completes to hide the old page."""
+        if self._previous_widget:
+            self._previous_widget.hide()
+            self._previous_widget.move(0, 0)  # Reset position for next time
+            self._previous_widget = None
