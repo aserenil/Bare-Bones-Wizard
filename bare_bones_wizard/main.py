@@ -2,6 +2,8 @@
 import sys
 from enum import Enum, auto
 
+# --- Import our custom animated widget ---
+from animated_stacked_widget import AnimatedStackedWidget
 from card_widget import CardWidget
 from PySide6.QtCore import Qt, QThread, Slot
 from PySide6.QtWidgets import (
@@ -11,13 +13,10 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 from worker import Worker
-
-# Note: The downloader module is no longer needed.
 
 
 class WizardStep(Enum):
@@ -42,7 +41,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        self.wizard = QStackedWidget()
+        # --- Use our new AnimatedStackedWidget ---
+        self.wizard = AnimatedStackedWidget()
         main_layout.addWidget(self.wizard)
 
         nav_layout = QHBoxLayout()
@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
 
         self.current_step_index = 0
         self.steps = list(WizardStep)
+        # Set the initial page without animation
         self.wizard.setCurrentIndex(self.current_step_index)
 
     def _create_pages(self):
@@ -92,7 +93,8 @@ class MainWindow(QMainWindow):
         current_step = self.steps[self.current_step_index]
 
         if current_step == WizardStep.WELCOME:
-            self.wizard.setCurrentIndex(WizardStep.PROCESSING.value - 1)
+            # --- Use goto_page for animated transition ---
+            self.wizard.goto_page(WizardStep.PROCESSING.value - 1)
             self.worker_thread = QThread()
             self.worker = Worker()
             self.worker.moveToThread(self.worker_thread)
@@ -110,32 +112,32 @@ class MainWindow(QMainWindow):
             return
 
         if self.current_step_index < len(self.steps) - 1:
-            self.current_step_index += 1
-            self.wizard.setCurrentIndex(self.current_step_index)
+            next_index = self.current_step_index + 1
+            # --- Use goto_page for animated transition ---
+            self.wizard.goto_page(next_index)
 
     def go_to_previous_step(self):
-        """Handles the logic for the 'Back' button."""
         current_step = self.steps[self.current_step_index]
 
-        # --- THE FIX: Special handling for going back ---
         if current_step == WizardStep.RESULTS:
             self._clear_cards()
-            # Explicitly jump back to the WELCOME page, skipping PROCESSING.
-            self.wizard.setCurrentIndex(WizardStep.WELCOME.value - 1)
+            # --- Use goto_page for animated transition ---
+            self.wizard.goto_page(WizardStep.WELCOME.value - 1)
             return
 
         if current_step == WizardStep.FINAL:
             self.final_page_label.setText("Process Complete!")
 
-        # Standard back logic for other pages
         if self.current_step_index > 0:
-            self.current_step_index -= 1
-            self.wizard.setCurrentIndex(self.current_step_index)
+            previous_index = self.current_step_index - 1
+            # --- Use goto_page for animated transition ---
+            self.wizard.goto_page(previous_index)
 
     def on_work_finished(self, results):
         self.results_data = results
         self.populate_results_page()
-        self.wizard.setCurrentIndex(WizardStep.RESULTS.value - 1)
+        # --- Use goto_page for animated transition ---
+        self.wizard.goto_page(WizardStep.RESULTS.value - 1)
 
     def populate_results_page(self):
         self._clear_cards()
@@ -165,13 +167,16 @@ class MainWindow(QMainWindow):
     def on_card_chosen(self, item_data):
         print(f"Final item chosen: {item_data['name']}")
         self.final_page_label.setText(f"You chose:\n{item_data['name']}")
-        self.wizard.setCurrentIndex(WizardStep.FINAL.value - 1)
+        # --- Use goto_page for animated transition ---
+        self.wizard.goto_page(WizardStep.FINAL.value - 1)
 
     def on_thread_finished(self):
         self.worker = None
         self.worker_thread = None
 
     def update_ui_for_step(self, index):
+        # This logic is now driven by the `currentChanged` signal,
+        # which is emitted by our custom widget after the animation finishes.
         self.current_step_index = index
         current_step = self.steps[index]
 
@@ -193,7 +198,6 @@ class MainWindow(QMainWindow):
             self.next_button.show()
 
     def closeEvent(self, event):
-        """The window is closing. We just accept it."""
         if self.worker_thread and self.worker_thread.isRunning():
             self.worker_thread.quit()
             self.worker_thread.wait()
